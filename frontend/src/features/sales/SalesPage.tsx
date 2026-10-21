@@ -19,6 +19,7 @@ import {
   Truck,
   ChevronDown,
   ChevronUp,
+  Edit2,
 } from 'lucide-react';
 
 const getNowLocalDateTime = () => {
@@ -98,6 +99,30 @@ export const SalesPage: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [cancelModalSale, setCancelModalSale] = useState<Sale | null>(null);
   const [cancellationReason, setCancellationReason] = useState('');
+
+  // Post-Addition & Edit State (Allow editing entry if any mistakes are made)
+  const [lastCreatedSale, setLastCreatedSale] = useState<Sale | null>(null);
+  const [editModalSale, setEditModalSale] = useState<Sale | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    id: '',
+    serialNumber: '',
+    transactionDate: getNowLocalDateTime(),
+    buyerName: '',
+    gstin: '',
+    vehicleNumber: '',
+    vehicleType: '10 WHEELER',
+    material: 'M-SAND',
+    grossWeight: '',
+    grossDateTime: getNowLocalDateTime(),
+    tareWeight: '',
+    tareDateTime: getNowLocalDateTime(),
+    rate: '0',
+    creditDebit: 'C',
+    paymentCategory: 'ACCOUNT' as PaymentCategory,
+    referenceNumber: '',
+    remarks: '',
+  });
+  const [editFormError, setEditFormError] = useState<string | null>(null);
 
   // Inline Vehicle Master Registration Modal & feedback state
   const [isVehicleRegModalOpen, setIsVehicleRegModalOpen] = useState(false);
@@ -270,7 +295,7 @@ export const SalesPage: React.FC = () => {
   // Create Sale Mutation
   const createMutation = useMutation({
     mutationFn: (newSale: typeof formData) => {
-      return apiClient('/sales', {
+      return apiClient<Sale>('/sales', {
         method: 'POST',
         body: JSON.stringify({
           ...newSale,
@@ -284,10 +309,11 @@ export const SalesPage: React.FC = () => {
         }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (savedSale: Sale) => {
       queryClient.invalidateQueries({ queryKey: ['salesList'] });
       queryClient.invalidateQueries({ queryKey: ['overviewMetrics'] });
       setIsCreateOpen(false);
+      setLastCreatedSale(savedSale);
       setFormData({
         serialNumber: '',
         transactionDate: getNowLocalDateTime(),
@@ -311,6 +337,96 @@ export const SalesPage: React.FC = () => {
     },
     onError: (err: any) => {
       setFormError(err.message || 'Failed to record weight entry');
+    },
+  });
+
+  // Open Edit Modal preloaded with sale data
+  const openEditModal = (sale: Sale) => {
+    setEditModalSale(sale);
+    setEditFormData({
+      id: sale.id,
+      serialNumber: sale.serialNumber || '',
+      transactionDate: sale.transactionDate
+        ? new Date(sale.transactionDate).toISOString().slice(0, 16)
+        : getNowLocalDateTime(),
+      buyerName: sale.buyerName || '',
+      gstin: sale.gstin || '',
+      vehicleNumber: sale.vehicleNumber || '',
+      vehicleType: sale.vehicleType || '10 WHEELER',
+      material: sale.material || 'M-SAND',
+      grossWeight: String(sale.grossWeight ?? ''),
+      grossDateTime: sale.grossDateTime
+        ? new Date(sale.grossDateTime).toISOString().slice(0, 16)
+        : getNowLocalDateTime(),
+      tareWeight: String(sale.tareWeight ?? ''),
+      tareDateTime: sale.tareDateTime
+        ? new Date(sale.tareDateTime).toISOString().slice(0, 16)
+        : getNowLocalDateTime(),
+      rate: String(sale.rate ?? '0'),
+      creditDebit: sale.creditDebit || (sale.paymentCategory === 'ACCOUNT' ? 'C' : 'D'),
+      paymentCategory: sale.paymentCategory,
+      referenceNumber: sale.referenceNumber || '',
+      remarks: sale.remarks || '',
+    });
+    setEditFormError(null);
+  };
+
+  // Handle vehicle change within edit modal
+  const handleEditVehicleChange = (inputVal: string) => {
+    const vNum = inputVal.toUpperCase();
+    const clean = vNum.replace(/\s+/g, '');
+    const matched = vehicles?.find(
+      (v) => v.vehicleNumber.replace(/\s+/g, '').toUpperCase() === clean
+    );
+
+    if (matched && matched.tareWeight !== null && matched.tareWeight !== undefined) {
+      setEditFormData((prev) => ({
+        ...prev,
+        vehicleNumber: vNum,
+        tareWeight: String(matched.tareWeight),
+      }));
+    } else {
+      setEditFormData((prev) => ({
+        ...prev,
+        vehicleNumber: vNum,
+      }));
+    }
+  };
+
+  // Update Sale Mutation
+  const updateMutation = useMutation({
+    mutationFn: (updatedSale: typeof editFormData) => {
+      return apiClient<Sale>(`/sales/${updatedSale.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          serialNumber: updatedSale.serialNumber || null,
+          transactionDate: updatedSale.transactionDate ? new Date(updatedSale.transactionDate).toISOString() : undefined,
+          buyerName: updatedSale.buyerName,
+          gstin: updatedSale.gstin || null,
+          vehicleNumber: updatedSale.vehicleNumber,
+          vehicleType: updatedSale.vehicleType || null,
+          material: updatedSale.material,
+          grossWeight: parseFloat(updatedSale.grossWeight),
+          grossDateTime: updatedSale.grossDateTime ? new Date(updatedSale.grossDateTime).toISOString() : undefined,
+          tareWeight: parseFloat(updatedSale.tareWeight),
+          tareDateTime: updatedSale.tareDateTime ? new Date(updatedSale.tareDateTime).toISOString() : undefined,
+          rate: parseFloat(updatedSale.rate) || 0,
+          paymentCategory: updatedSale.paymentCategory,
+          creditDebit: updatedSale.creditDebit || (updatedSale.paymentCategory === 'ACCOUNT' ? 'C' : 'D'),
+          referenceNumber: updatedSale.referenceNumber || null,
+          remarks: updatedSale.remarks || null,
+        }),
+      });
+    },
+    onSuccess: (updatedSale) => {
+      queryClient.invalidateQueries({ queryKey: ['salesList'] });
+      queryClient.invalidateQueries({ queryKey: ['overviewMetrics'] });
+      setLastCreatedSale(updatedSale);
+      setEditModalSale(null);
+      setEditFormError(null);
+    },
+    onError: (err: any) => {
+      setEditFormError(err.message || 'Failed to update weight entry');
     },
   });
 
@@ -399,6 +515,34 @@ export const SalesPage: React.FC = () => {
     formData.buyerName.trim() !== '' &&
     formData.vehicleNumber.trim() !== '' &&
     formData.material.trim() !== '';
+
+  // Weight validation and dynamic calculations for Edit Modal
+  const editHasGross = editFormData.grossWeight.trim() !== '' && !isNaN(Number(editFormData.grossWeight));
+  const editHasTare = editFormData.tareWeight.trim() !== '' && !isNaN(Number(editFormData.tareWeight));
+  const editGrossNum = editHasGross ? parseFloat(editFormData.grossWeight) : NaN;
+  const editTareNum = editHasTare ? parseFloat(editFormData.tareWeight) : NaN;
+  const editAreWeightsAvailable = editHasGross && editHasTare && editGrossNum > 0 && editTareNum >= 0;
+  const editIsWeightInvalid = editAreWeightsAvailable && editGrossNum < editTareNum;
+  const editIsWeightValid = editAreWeightsAvailable && editGrossNum >= editTareNum;
+  const editNetWeightNum = editIsWeightValid ? editGrossNum - editTareNum : null;
+  const editPreviewNet = editIsWeightValid && editNetWeightNum !== null ? editNetWeightNum.toFixed(3) : null;
+
+  const editHasRate = editFormData.rate.trim() !== '' && !isNaN(Number(editFormData.rate));
+  const editRateNum = editHasRate ? parseFloat(editFormData.rate) : NaN;
+  const editIsRateValid = editHasRate && editRateNum >= 0;
+  const editIsRateNegative = editHasRate && editRateNum < 0;
+  const editAmountNum =
+    editIsWeightValid && editNetWeightNum !== null && editIsRateValid
+      ? Math.round((editNetWeightNum * editRateNum + Number.EPSILON) * 100) / 100
+      : null;
+  const editPreviewAmount = editAmountNum !== null ? editAmountNum.toFixed(2) : null;
+
+  const canSubmitEdit =
+    editIsWeightValid &&
+    editIsRateValid &&
+    editFormData.buyerName.trim() !== '' &&
+    editFormData.vehicleNumber.trim() !== '' &&
+    editFormData.material.trim() !== '';
 
   // Group entries by Sales Operator (Operator-wise grouping with subtotals)
   const operatorGroups: OperatorGroup[] = useMemo(() => {
@@ -531,6 +675,57 @@ export const SalesPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Post-Submission Entry Confirmation & Quick Mistake Correction Banner */}
+      {lastCreatedSale && (
+        <div className="p-4 bg-black text-white border-2 border-black shadow-card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 font-mono">
+          <div className="flex items-start sm:items-center space-x-3">
+            <div className="p-1.5 bg-white text-black font-bold flex-shrink-0">
+              <Check className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider flex items-center space-x-2">
+                <span>Entry Successfully Recorded</span>
+                {lastCreatedSale.serialNumber && (
+                  <span className="text-[10px] bg-[#374151] px-1.5 py-0.5 text-white">
+                    S.No: {lastCreatedSale.serialNumber}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-[#d1d5db] mt-0.5">
+                <span className="font-semibold text-white">{lastCreatedSale.buyerName}</span> •{' '}
+                <span>{lastCreatedSale.vehicleNumber}</span> •{' '}
+                <span>Net: {Number(lastCreatedSale.netWeight).toFixed(3)} T</span> •{' '}
+                <span className="font-bold text-white">
+                  ₹{Number(lastCreatedSale.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                </span>
+                <span className="text-[#9ca3af] ml-2 hidden md:inline">
+                  (Made a mistake? Click edit to rectify immediately)
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => openEditModal(lastCreatedSale)}
+              className="px-3.5 py-1.5 bg-white text-black text-xs font-bold uppercase tracking-wider hover:bg-[#e5e7eb] flex items-center space-x-1.5 rounded-none shadow-subtle"
+            >
+              <Edit2 className="w-3.5 h-3.5" />
+              <span>Edit Entry (Fix Mistake)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLastCreatedSale(null)}
+              className="p-1.5 text-[#9ca3af] hover:text-white"
+              title="Dismiss confirmation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Quick Weight Entry Workflow Form (Fast table-aligned operator data entry) */}
       {isQuickEntryOpen && (
@@ -1263,13 +1458,24 @@ export const SalesPage: React.FC = () => {
                         </td>
                         <td className="py-2 px-3 text-right">
                           {!sale.isCancelled && (
-                            <button
-                              onClick={() => setCancelModalSale(sale)}
-                              className="p-1 text-[#6b7280] hover:text-black border border-transparent hover:border-[#d1d5db]"
-                              title="Cancel transaction"
-                            >
-                              <Ban className="w-3.5 h-3.5" />
-                            </button>
+                            <div className="flex items-center justify-end space-x-1">
+                              {(isAdmin || sale.createdById === user?.id || sale.createdBy?.id === user?.id) && (
+                                <button
+                                  onClick={() => openEditModal(sale)}
+                                  className="p-1 text-[#4b5563] hover:text-black hover:bg-[#f3f4f6] border border-transparent hover:border-[#d1d5db]"
+                                  title="Edit weight entry details"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setCancelModalSale(sale)}
+                                className="p-1 text-[#6b7280] hover:text-black hover:bg-[#f3f4f6] border border-transparent hover:border-[#d1d5db]"
+                                title="Cancel transaction"
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -1954,6 +2160,378 @@ export const SalesPage: React.FC = () => {
                 Confirm Cancellation
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Weight Entry Modal */}
+      {editModalSale && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 font-mono">
+          <div className="bg-white border-2 border-black max-w-2xl w-full p-6 shadow-elevated rounded-none max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e5e7eb] mb-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-black flex items-center space-x-2">
+                <Edit2 className="w-4 h-4 text-black" />
+                <span>Edit Weight Entry Record</span>
+                {editFormData.serialNumber && (
+                  <span className="text-[10px] bg-[#f3f4f6] px-1.5 py-0.5 border border-black">
+                    S.No: {editFormData.serialNumber}
+                  </span>
+                )}
+              </h3>
+              <button
+                onClick={() => {
+                  setEditModalSale(null);
+                  setEditFormError(null);
+                }}
+                className="text-[#9ca3af] hover:text-black"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {editFormError && (
+              <div className="mb-4 p-2.5 border border-black bg-[#f3f4f6] text-black text-xs flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{editFormError}</span>
+              </div>
+            )}
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!editAreWeightsAvailable) {
+                  setEditFormError('Please enter both Gross Weight and Tare Weight before saving.');
+                  return;
+                }
+                if (editIsWeightInvalid) {
+                  setEditFormError('Gross weight must be greater than or equal to Tare weight.');
+                  return;
+                }
+                if (!editIsRateValid) {
+                  setEditFormError('Rate per Ton must be a valid, non-negative monetary value.');
+                  return;
+                }
+                updateMutation.mutate(editFormData);
+              }}
+              className="space-y-3"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Serial Number (S.No)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 101"
+                    value={editFormData.serialNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, serialNumber: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Transaction Date & Time (IST)
+                  </label>
+                  <input
+                    type="datetime-local"
+                    required
+                    value={editFormData.transactionDate}
+                    onChange={(e) => setEditFormData({ ...editFormData, transactionDate: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Party Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    list="editModalBuyerOptions"
+                    value={editFormData.buyerName}
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      const matched = buyers?.find((b) => b.name.toLowerCase() === name.toLowerCase());
+                      setEditFormData({
+                        ...editFormData,
+                        buyerName: name,
+                        gstin: matched?.gstin || editFormData.gstin,
+                      });
+                    }}
+                    placeholder="Party / Client / Buyer"
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black"
+                  />
+                  <datalist id="editModalBuyerOptions">
+                    {buyers?.map((b) => (
+                      <option key={b.id} value={b.name} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    GSTIN (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.gstin}
+                    onChange={(e) => setEditFormData({ ...editFormData, gstin: e.target.value })}
+                    placeholder="29AAAAA0000A1Z5"
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Vehicle Number *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    list="editModalVehicleOptions"
+                    value={editFormData.vehicleNumber}
+                    onChange={(e) => handleEditVehicleChange(e.target.value)}
+                    placeholder="KA01AB1234"
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black uppercase font-mono"
+                  />
+                  <datalist id="editModalVehicleOptions">
+                    {vehicles?.map((v) => (
+                      <option
+                        key={v.id}
+                        value={v.vehicleNumber}
+                        label={v.tareWeight !== null && v.tareWeight !== undefined ? `Master Tare: ${v.tareWeight} T` : 'No Tare'}
+                      />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Vehicle Type
+                  </label>
+                  <select
+                    value={editFormData.vehicleType}
+                    onChange={(e) => setEditFormData({ ...editFormData, vehicleType: e.target.value })}
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black bg-white"
+                  >
+                    {VEHICLE_TYPES.map((vt) => (
+                      <option key={vt} value={vt}>
+                        {vt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Material *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    list="editModalMaterialOptions"
+                    value={editFormData.material}
+                    onChange={(e) => setEditFormData({ ...editFormData, material: e.target.value })}
+                    placeholder="M-SAND, 20MM, etc."
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black"
+                  />
+                  <datalist id="editModalMaterialOptions">
+                    {COMMON_MATERIALS.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Weights Input Section */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="p-3 border border-[#d1d5db] bg-[#f9fafb] space-y-2">
+                  <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-1">
+                    <span className="text-[10px] font-bold uppercase text-black">
+                      Tare Weighment
+                    </span>
+                    <span className="text-[9px] text-[#6b7280]">Empty Truck</span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#4b5563] uppercase mb-0.5">
+                      Tare Wt (Tons) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      required
+                      value={editFormData.tareWeight}
+                      onChange={(e) => setEditFormData({ ...editFormData, tareWeight: e.target.value })}
+                      placeholder="10.200"
+                      className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black text-right font-bold bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#4b5563] uppercase mb-0.5">
+                      Tare Date & Time (IST)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={editFormData.tareDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, tareDateTime: e.target.value })}
+                      className="w-full px-2 py-1 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black text-[11px] bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 border border-[#d1d5db] bg-[#f9fafb] space-y-2">
+                  <div className="flex items-center justify-between border-b border-[#e5e7eb] pb-1">
+                    <span className="text-[10px] font-bold uppercase text-black">
+                      Gross Weighment
+                    </span>
+                    <span className="text-[9px] text-[#6b7280]">Loaded Truck</span>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#4b5563] uppercase mb-0.5">
+                      Gross Wt (Tons) *
+                    </label>
+                    <input
+                      type="number"
+                      step="0.001"
+                      required
+                      value={editFormData.grossWeight}
+                      onChange={(e) => setEditFormData({ ...editFormData, grossWeight: e.target.value })}
+                      placeholder="35.500"
+                      className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black text-right font-bold bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-[#4b5563] uppercase mb-0.5">
+                      Gross Date & Time (IST)
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={editFormData.grossDateTime}
+                      onChange={(e) => setEditFormData({ ...editFormData, grossDateTime: e.target.value })}
+                      className="w-full px-2 py-1 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black text-[11px] bg-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Automatic Calculation Preview Strip */}
+              <div className="p-3 border-2 border-black bg-white flex items-center justify-between text-xs font-mono">
+                <div>
+                  <div className="text-[10px] text-[#6b7280] uppercase">Calculated Net Weight (Gross − Tare)</div>
+                  {editIsWeightValid ? (
+                    <div className="text-base font-extrabold text-black">{editPreviewNet} Tons</div>
+                  ) : editIsWeightInvalid ? (
+                    <div className="text-xs font-bold text-red-600">Invalid: Gross Wt &lt; Tare Wt</div>
+                  ) : (
+                    <div className="text-xs text-[#9ca3af] italic">Enter gross and tare weights</div>
+                  )}
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-[#6b7280] uppercase">Calculated Billed Total</div>
+                  <div className="text-base font-extrabold text-black">
+                    {editIsWeightValid && editPreviewAmount !== null
+                      ? `₹${parseFloat(editPreviewAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                      : '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Payment Category
+                  </label>
+                  <select
+                    value={editFormData.paymentCategory}
+                    onChange={(e) => {
+                      const cat = e.target.value as PaymentCategory;
+                      setEditFormData({
+                        ...editFormData,
+                        paymentCategory: cat,
+                        creditDebit: cat === 'ACCOUNT' ? 'C' : 'D',
+                      });
+                    }}
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black bg-white font-bold"
+                  >
+                    <option value="ACCOUNT">Credit</option>
+                    <option value="CASH">Cash</option>
+                    <option value="ONLINE">Online / UPI</option>
+                    <option value="CHEQUE">Cheque</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Rate / Ton (₹)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editFormData.rate}
+                    onChange={(e) => setEditFormData({ ...editFormData, rate: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black text-right font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                    Ref / Challan No
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.referenceNumber}
+                    onChange={(e) => setEditFormData({ ...editFormData, referenceNumber: e.target.value })}
+                    placeholder="Challan / Pass"
+                    className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-black uppercase mb-1">
+                  Remarks / Notes
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.remarks}
+                  onChange={(e) => setEditFormData({ ...editFormData, remarks: e.target.value })}
+                  placeholder="Additional weighbridge notes"
+                  className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#e5e7eb] flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditModalSale(null);
+                    setEditFormError(null);
+                  }}
+                  className="px-4 py-2 border border-[#d1d5db] text-xs font-semibold uppercase text-black hover:bg-[#f3f4f6]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSubmitEdit || updateMutation.isPending}
+                  title={
+                    !canSubmitEdit
+                      ? 'Please enter valid weights (Gross ≥ Tare > 0) and required details'
+                      : 'Update weight transaction'
+                  }
+                  className="px-5 py-2 bg-black text-white text-xs font-bold uppercase tracking-wider hover:bg-[#1f2937] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {updateMutation.isPending ? 'Saving Corrections...' : 'Save Corrections'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
