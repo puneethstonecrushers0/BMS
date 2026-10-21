@@ -21,7 +21,7 @@ const REQUIRED_TABLES = [
 ];
 
 /**
- * Sanitizes a PostgreSQL connection string for safe logging without exposing passwords.
+ * Sanitizes a PostgreSQL connection string for safe logging.
  */
 export function sanitizeDatabaseUrl(urlStr: string): string {
   try {
@@ -30,6 +30,7 @@ export function sanitizeDatabaseUrl(urlStr: string): string {
     const host = parsed.hostname || 'localhost';
     const port = parsed.port || '5432';
     const db = parsed.pathname.replace(/^\//, '') || 'unknown_db';
+
     return `postgresql://${user}:*****@${host}:${port}/${db}`;
   } catch {
     return 'postgresql://*****:*****@localhost:5432/******';
@@ -37,94 +38,92 @@ export function sanitizeDatabaseUrl(urlStr: string): string {
 }
 
 /**
- * Verifies database server connectivity and checks that all required tables exist.
+ * Checks database connectivity and required public tables.
+ * Schema changes must be applied through Prisma migrations.
  */
 export async function verifyDatabaseInitialization(): Promise<DatabaseVerificationResult> {
-  const sanitizedUrl = sanitizeDatabaseUrl(ENV.DATABASE_URL);
-
   try {
-    // 1. Verify PostgreSQL server connection and retrieve current database name
-    const [dbResult] = await prisma.$queryRaw<Array<{ current_db: string }>>`
+    const [dbResult] = await prisma.$queryRaw<
+      Array<{ current_db: string }>
+    >`
       SELECT current_database() AS current_db
     `;
 
-    const databaseName = dbResult?.current_db || 'unknown';
-
-    // 2. Query information_schema for initialized public tables
-    const tables = await prisma.$queryRaw<Array<{ table_name: string }>>`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+    const tables = await prisma.$queryRaw<
+      Array<{ table_name: string }>
+    >`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
         AND table_type = 'BASE TABLE'
     `;
 
-    const existingTableNames = new Set(tables.map((t) => t.table_name));
-    const missingTables = REQUIRED_TABLES.filter((name) => !existingTableNames.has(name));
+    const existingTableNames = new Set(
+      tables.map((table) => table.table_name),
+    );
 
-    const ready = missingTables.length === 0;
-
-    // 3. If tables are initialized, verify/ensure required columns exist
-    if (ready) {
-      try {
-        await prisma.$executeRawUnsafe(`
-          ALTER TABLE "sales" 
-          ADD COLUMN IF NOT EXISTS "serialNumber" TEXT,
-          ADD COLUMN IF NOT EXISTS "vehicleType" TEXT,
-          ADD COLUMN IF NOT EXISTS "grossDateTime" TIMESTAMP(3),
-          ADD COLUMN IF NOT EXISTS "tareDateTime" TIMESTAMP(3),
-          ADD COLUMN IF NOT EXISTS "creditDebit" TEXT;
-          CREATE INDEX IF NOT EXISTS "sales_serialNumber_idx" ON "sales"("serialNumber");
-        `);
-      } catch (colErr: any) {
-        console.warn(`[DB Init] Note on column verification:`, colErr.message);
-      }
-    }
+    const missingTables = REQUIRED_TABLES.filter(
+      (tableName) => !existingTableNames.has(tableName),
+    );
 
     return {
       connected: true,
-      databaseName,
-      ready,
+      databaseName: dbResult?.current_db || 'unknown',
+      ready: missingTables.length === 0,
       missingTables,
     };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       connected: false,
       ready: false,
       missingTables: REQUIRED_TABLES,
-      error: err.message || 'Unable to establish connection to PostgreSQL server',
+      error:
+        err instanceof Error
+          ? err.message
+          : 'Unable to connect to PostgreSQL',
     };
   }
 }
 
-// Standalone execution script
-if (process.argv[1]?.endsWith('init.ts') || process.argv[1]?.endsWith('init.js')) {
-  console.log(`[DB Init] Checking database connectivity and schema readiness...`);
+// Standalone execution script.
+if (
+  process.argv[1]?.endsWith('init.ts') ||
+  process.argv[1]?.endsWith('init.js')
+) {
+  console.log('[DB Init] Checking database connectivity and schema readiness...');
   console.log(`[DB Init] Target: ${sanitizeDatabaseUrl(ENV.DATABASE_URL)}`);
 
   verifyDatabaseInitialization()
     .then((result) => {
       if (!result.connected) {
-        console.error(`[DB Init] FAILED: PostgreSQL connection could not be established.`);
-        console.error(`[DB Init] Details: ${result.error}`);
-        console.error(`[DB Init] Please ensure your local PostgreSQL service is running and DATABASE_URL is configured.`);
-        process.exit(1);
+        console.error('[DB Init] PostgreSQL connection failed:', result.error);
+        process.exitCode = 1;
+        return;
       }
 
-      console.log(`[DB Init] Connected successfully to database: "${result.databaseName}"`);
+      console.log(
+        `[DB Init] Connected to database: "${result.databaseName}"`,
+      );
 
       if (!result.ready) {
-        console.error(`[DB Init] INCOMPLETE SCHEMA: Missing required database tables:`);
-        result.missingTables.forEach((t) => console.error(`          - ${t}`));
-        console.error(`[DB Init] Please run "npm run db:setup" or "npm run db:migrate:deploy" to apply version-controlled migrations.`);
-        process.exit(1);
+        console.error('[DB Init] Missing required tables:');
+        result.missingTables.forEach((table) => {
+          console.error(`  - ${table}`);
+        });
+        console.error(
+          '[DB Init] Run "npm run db:migrate:deploy" to apply pending migrations.',
+        );
+        process.exitCode = 1;
+        return;
       }
 
-      console.log(`[DB Init] All ${REQUIRED_TABLES.length} required business tables and indexes are initialized and ready.`);
-      process.exit(0);
+      console.log(
+        `[DB Init] All ${REQUIRED_TABLES.length} required tables are present.`,
+      );
     })
-    .catch((err) => {
-      console.error(`[DB Init] Unexpected error during verification:`, err);
-      process.exit(1);
+    .catch((err: unknown) => {
+      console.error('[DB Init] Verification failed:', err);
+      process.exitCode = 1;
     })
     .finally(async () => {
       await prisma.$disconnect();
