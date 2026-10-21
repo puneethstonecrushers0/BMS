@@ -131,12 +131,16 @@ export class SaleService {
     }
 
     const updated = await saleRepository.update(id, {
+      ...(input.serialNumber !== undefined ? { serialNumber: input.serialNumber || null } : {}),
       ...(input.transactionDate ? { transactionDate: input.transactionDate } : {}),
       ...(buyerId ? { buyer: { connect: { id: buyerId } }, buyerName, gstin } : {}),
       ...(vehicleId ? { vehicle: { connect: { id: vehicleId } }, vehicleNumber } : {}),
+      ...(input.vehicleType !== undefined ? { vehicleType: input.vehicleType || null } : {}),
       ...(input.material ? { material: input.material } : {}),
       grossWeight: new Prisma.Decimal(grossWeight),
+      ...(input.grossDateTime !== undefined ? { grossDateTime: input.grossDateTime || null } : {}),
       tareWeight: new Prisma.Decimal(tareWeight),
+      ...(input.tareDateTime !== undefined ? { tareDateTime: input.tareDateTime || null } : {}),
       netWeight: new Prisma.Decimal(netWeight.toString()),
       rate: new Prisma.Decimal(rate),
       amount: new Prisma.Decimal(amount.toString()),
@@ -160,7 +164,15 @@ export class SaleService {
       action: 'SALE_UPDATED',
       entityType: 'SALE',
       entityId: id,
-      metadata: { buyer: updated.buyerName, amount: updated.amount.toString() },
+      metadata: {
+        serialNumber: updated.serialNumber,
+        buyer: updated.buyerName,
+        vehicle: updated.vehicleNumber,
+        vehicleType: updated.vehicleType,
+        netWeight: updated.netWeight.toString(),
+        amount: updated.amount.toString(),
+        paymentCategory: updated.paymentCategory,
+      },
       ipAddress,
     });
 
