@@ -31,7 +31,8 @@ export class SaleService {
 
     const tareDateTime = input.tareDateTime || input.transactionDate;
     const grossDateTime = input.grossDateTime || input.transactionDate;
-    const creditDebit = input.creditDebit || (input.paymentCategory === 'ACCOUNT' ? 'C' : 'D');
+    const paymentCategory = (input.paymentCategory || (input.creditDebit === 'C' ? 'ACCOUNT' : 'CASH')) as PaymentCategory;
+    const creditDebit = input.creditDebit || (paymentCategory === 'ACCOUNT' ? 'C' : 'D');
 
     const sale = await saleRepository.create({
       serialNumber,
@@ -50,7 +51,7 @@ export class SaleService {
       netWeight: new Prisma.Decimal(netWeight.toString()),
       rate: new Prisma.Decimal((input.rate || 0).toString()),
       amount: new Prisma.Decimal(amount.toString()),
-      paymentCategory: (creditDebit === 'C' ? 'ACCOUNT' : (input.paymentCategory || 'CASH')) as PaymentCategory,
+      paymentCategory,
       creditDebit,
       referenceNumber: input.referenceNumber || null,
       remarks: input.remarks || null,
@@ -139,7 +140,14 @@ export class SaleService {
       netWeight: new Prisma.Decimal(netWeight.toString()),
       rate: new Prisma.Decimal(rate),
       amount: new Prisma.Decimal(amount.toString()),
-      ...(input.paymentCategory ? { paymentCategory: input.paymentCategory as PaymentCategory } : {}),
+      ...(input.paymentCategory
+        ? {
+            paymentCategory: input.paymentCategory as PaymentCategory,
+            creditDebit: input.creditDebit || (input.paymentCategory === 'ACCOUNT' ? 'C' : 'D'),
+          }
+        : input.creditDebit
+        ? { creditDebit: input.creditDebit }
+        : {}),
       ...(input.referenceNumber !== undefined ? { referenceNumber: input.referenceNumber } : {}),
       ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
       updatedBy: { connect: { id: actor.id } },
