@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../api/client';
-import { Sale, Buyer, Vehicle, User } from '../../types';
+import { Sale, Buyer, Vehicle, User, PaymentCategory } from '../../types';
 import { useAuth } from '../auth/AuthContext';
 import {
   Plus,
@@ -85,7 +85,7 @@ export const SalesPage: React.FC = () => {
   const [vehicleFilter, setVehicleFilter] = useState('');
   const [vehicleTypeFilter, setVehicleTypeFilter] = useState('');
   const [materialFilter, setMaterialFilter] = useState('');
-  const [creditDebitFilter, setCreditDebitFilter] = useState('');
+  const [paymentCategoryFilter, setPaymentCategoryFilter] = useState('');
   const [driverFilter, setDriverFilter] = useState('');
   const [operatorFilter, setOperatorFilter] = useState('');
   const [startDateTime, setStartDateTime] = useState('');
@@ -125,7 +125,7 @@ export const SalesPage: React.FC = () => {
     tareDateTime: getNowLocalDateTime(),
     rate: '0',
     creditDebit: 'C',
-    paymentCategory: 'ACCOUNT',
+    paymentCategory: 'ACCOUNT' as PaymentCategory,
     referenceNumber: '',
     remarks: '',
   });
@@ -241,7 +241,7 @@ export const SalesPage: React.FC = () => {
       vehicleFilter,
       vehicleTypeFilter,
       materialFilter,
-      creditDebitFilter,
+      paymentCategoryFilter,
       driverFilter,
       operatorFilter,
       startDateTime,
@@ -256,7 +256,7 @@ export const SalesPage: React.FC = () => {
       if (vehicleFilter) params.set('vehicleNumber', vehicleFilter);
       if (vehicleTypeFilter) params.set('vehicleType', vehicleTypeFilter);
       if (materialFilter) params.set('material', materialFilter);
-      if (creditDebitFilter) params.set('creditDebit', creditDebitFilter);
+      if (paymentCategoryFilter) params.set('paymentCategory', paymentCategoryFilter);
       if (driverFilter) params.set('driverName', driverFilter);
       if (isAdmin && operatorFilter) params.set('operatorId', operatorFilter);
       if (startDateTime) params.set('startDateTime', startDateTime);
@@ -279,7 +279,8 @@ export const SalesPage: React.FC = () => {
           tareWeight: parseFloat(newSale.tareWeight),
           tareDateTime: newSale.tareDateTime ? new Date(newSale.tareDateTime).toISOString() : undefined,
           rate: parseFloat(newSale.rate) || 0,
-          paymentCategory: newSale.creditDebit === 'C' ? 'ACCOUNT' : 'CASH',
+          paymentCategory: newSale.paymentCategory,
+          creditDebit: newSale.creditDebit || (newSale.paymentCategory === 'ACCOUNT' ? 'C' : 'D'),
         }),
       });
     },
@@ -301,7 +302,7 @@ export const SalesPage: React.FC = () => {
         tareDateTime: getNowLocalDateTime(),
         rate: '0',
         creditDebit: 'C',
-        paymentCategory: 'ACCOUNT',
+        paymentCategory: 'ACCOUNT' as PaymentCategory,
         referenceNumber: '',
         remarks: '',
       });
@@ -337,7 +338,7 @@ export const SalesPage: React.FC = () => {
     if (vehicleFilter) params.set('vehicleNumber', vehicleFilter);
     if (vehicleTypeFilter) params.set('vehicleType', vehicleTypeFilter);
     if (materialFilter) params.set('material', materialFilter);
-    if (creditDebitFilter) params.set('creditDebit', creditDebitFilter);
+    if (paymentCategoryFilter) params.set('paymentCategory', paymentCategoryFilter);
     if (driverFilter) params.set('driverName', driverFilter);
     if (isAdmin && operatorFilter) params.set('operatorId', operatorFilter);
     if (startDateTime) params.set('startDateTime', startDateTime);
@@ -811,22 +812,24 @@ export const SalesPage: React.FC = () => {
 
               <div>
                 <label className="block text-[10px] font-bold uppercase text-[#4b5563] mb-1">
-                  C-D (Credit / Debit)
+                  Payment Category
                 </label>
                 <select
-                  value={formData.creditDebit}
+                  value={formData.paymentCategory}
                   onChange={(e) => {
-                    const cd = e.target.value;
+                    const cat = e.target.value as PaymentCategory;
                     setFormData({
                       ...formData,
-                      creditDebit: cd,
-                      paymentCategory: cd === 'C' ? 'ACCOUNT' : 'CASH',
+                      paymentCategory: cat,
+                      creditDebit: cat === 'ACCOUNT' ? 'C' : 'D',
                     });
                   }}
                   className="w-full px-2 py-1.5 text-xs border border-[#d1d5db] focus:outline-none focus:border-black rounded-none bg-white font-bold"
                 >
-                  <option value="C">C (Credit — Pay Later)</option>
-                  <option value="D">D (Cash / Paid)</option>
+                  <option value="ACCOUNT">Credit</option>
+                  <option value="CASH">Cash</option>
+                  <option value="ONLINE">Online / UPI</option>
+                  <option value="CHEQUE">Cheque</option>
                 </select>
               </div>
 
@@ -1003,19 +1006,21 @@ export const SalesPage: React.FC = () => {
             </select>
           </div>
 
-          {/* C-D filter */}
+          {/* Payment Category filter */}
           <div>
             <select
-              value={creditDebitFilter}
+              value={paymentCategoryFilter}
               onChange={(e) => {
-                setCreditDebitFilter(e.target.value);
+                setPaymentCategoryFilter(e.target.value);
                 setPage(1);
               }}
               className="w-full px-2 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black bg-white"
             >
-              <option value="">All C-D Types</option>
-              <option value="C">C (Credit / Pay Later)</option>
-              <option value="D">D (Cash / Paid)</option>
+              <option value="">All Payment Categories</option>
+              <option value="ACCOUNT">Credit</option>
+              <option value="CASH">Cash</option>
+              <option value="ONLINE">Online / UPI</option>
+              <option value="CHEQUE">Cheque</option>
             </select>
           </div>
         </div>
@@ -1086,7 +1091,7 @@ export const SalesPage: React.FC = () => {
           vehicleFilter ||
           vehicleTypeFilter ||
           materialFilter ||
-          creditDebitFilter ||
+          paymentCategoryFilter ||
           driverFilter ||
           operatorFilter ||
           startDateTime ||
@@ -1100,7 +1105,7 @@ export const SalesPage: React.FC = () => {
                   setVehicleFilter('');
                   setVehicleTypeFilter('');
                   setMaterialFilter('');
-                  setCreditDebitFilter('');
+                  setPaymentCategoryFilter('');
                   setDriverFilter('');
                   setOperatorFilter('');
                   setStartDateTime('');
@@ -1142,7 +1147,7 @@ export const SalesPage: React.FC = () => {
                   <th className="py-2.5 px-3 text-right border-r border-[#e5e7eb]">Rate (₹/T)</th>
                   <th className="py-2.5 px-3 text-right border-r border-[#e5e7eb]">Amount (₹)</th>
                   <th className="py-2.5 px-3 border-r border-[#e5e7eb]">Vehicle Type</th>
-                  <th className="py-2.5 px-3 text-center border-r border-[#e5e7eb]">C-D</th>
+                  <th className="py-2.5 px-3 text-center border-r border-[#e5e7eb]">Payment</th>
                   {isAdmin && <th className="py-2.5 px-3 border-r border-[#e5e7eb]">Operator</th>}
                   <th className="py-2.5 px-3 text-center border-r border-[#e5e7eb]">Status</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
@@ -1223,12 +1228,23 @@ export const SalesPage: React.FC = () => {
                         </td>
                         <td className="py-2 px-3 text-center border-r border-[#f3f4f6]">
                           <span
-                            className={`px-2 py-0.5 text-[10px] font-bold border ${sale.creditDebit === 'C' || sale.paymentCategory === 'ACCOUNT'
+                            className={`px-2 py-0.5 text-[10px] font-bold border ${
+                              sale.paymentCategory === 'ACCOUNT' || sale.creditDebit === 'C'
                                 ? 'bg-black text-white border-black'
+                                : sale.paymentCategory === 'ONLINE'
+                                ? 'bg-[#1e293b] text-white border-[#1e293b]'
+                                : sale.paymentCategory === 'CHEQUE'
+                                ? 'bg-[#374151] text-white border-[#374151]'
                                 : 'bg-[#f3f4f6] text-black border-[#d1d5db]'
-                              }`}
+                            }`}
                           >
-                            {sale.creditDebit || (sale.paymentCategory === 'ACCOUNT' ? 'C' : 'D')}
+                            {sale.paymentCategory === 'ACCOUNT' || sale.creditDebit === 'C'
+                              ? 'CREDIT'
+                              : sale.paymentCategory === 'ONLINE'
+                              ? 'ONLINE / UPI'
+                              : sale.paymentCategory === 'CHEQUE'
+                              ? 'CHEQUE'
+                              : 'CASH'}
                           </span>
                         </td>
                         {isAdmin && (
@@ -1658,22 +1674,24 @@ export const SalesPage: React.FC = () => {
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-black uppercase mb-1">
-                    C-D (Credit / Debit)
+                    Payment Category
                   </label>
                   <select
-                    value={formData.creditDebit}
+                    value={formData.paymentCategory}
                     onChange={(e) => {
-                      const cd = e.target.value;
+                      const cat = e.target.value as PaymentCategory;
                       setFormData({
                         ...formData,
-                        creditDebit: cd,
-                        paymentCategory: cd === 'C' ? 'ACCOUNT' : 'CASH',
+                        paymentCategory: cat,
+                        creditDebit: cat === 'ACCOUNT' ? 'C' : 'D',
                       });
                     }}
                     className="w-full px-2.5 py-1.5 text-xs border border-[#d1d5db] rounded-none focus:outline-none focus:border-black bg-white font-bold"
                   >
-                    <option value="C">C (Credit / Pay Later)</option>
-                    <option value="D">D (Cash / Paid)</option>
+                    <option value="ACCOUNT">Credit</option>
+                    <option value="CASH">Cash</option>
+                    <option value="ONLINE">Online / UPI</option>
+                    <option value="CHEQUE">Cheque</option>
                   </select>
                 </div>
 
