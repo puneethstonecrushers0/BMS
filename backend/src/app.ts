@@ -11,6 +11,10 @@ import { prisma } from './database/prisma.js';
 export function createApp(): Express {
   const app = express();
 
+  // Trust reverse proxy (Nginx / Cloudflare / AWS) so X-Forwarded-For headers
+  // are properly trusted by express-rate-limit and req.ip correctly identifies clients
+  app.set('trust proxy', 1);
+
   // Secure HTTP Headers
   app.use(
     helmet({

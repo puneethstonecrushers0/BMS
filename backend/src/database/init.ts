@@ -63,6 +63,23 @@ export async function verifyDatabaseInitialization(): Promise<DatabaseVerificati
 
     const ready = missingTables.length === 0;
 
+    // 3. If tables are initialized, verify/ensure required columns exist
+    if (ready) {
+      try {
+        await prisma.$executeRawUnsafe(`
+          ALTER TABLE "sales" 
+          ADD COLUMN IF NOT EXISTS "serialNumber" TEXT,
+          ADD COLUMN IF NOT EXISTS "vehicleType" TEXT,
+          ADD COLUMN IF NOT EXISTS "grossDateTime" TIMESTAMP(3),
+          ADD COLUMN IF NOT EXISTS "tareDateTime" TIMESTAMP(3),
+          ADD COLUMN IF NOT EXISTS "creditDebit" TEXT;
+          CREATE INDEX IF NOT EXISTS "sales_serialNumber_idx" ON "sales"("serialNumber");
+        `);
+      } catch (colErr: any) {
+        console.warn(`[DB Init] Note on column verification:`, colErr.message);
+      }
+    }
+
     return {
       connected: true,
       databaseName,
